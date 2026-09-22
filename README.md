@@ -23,7 +23,7 @@ supabase/
 
 - **Ledger model** – `transactions` is an append-only ledger with signed integer cents. `accounts.balance_cents` is a cached balance maintained by the Postgres function `post_transaction()`, which locks the account row, rejects overdrafts and enforces idempotency via `(account_id, reference_id)`. The API never computes balances in application code.
 - **Two auth realms** (`apps/api/src/plugins/auth.ts`):
-  - *User endpoints* verify Supabase access tokens (HS256 with `SUPABASE_JWT_SECRET`, `aud=authenticated`).
+  - *User endpoints* verify Supabase access tokens (`aud=authenticated`): asymmetric ES256/RS256 tokens via the project JWKS (`/auth/v1/.well-known/jwks.json`), or legacy HS256 tokens when `SUPABASE_JWT_SECRET` is set.
   - *Internal endpoints* verify tokens minted by other microservices (HS256 with `SERVICE_JWT_SECRET`, `iss` in `SERVICE_JWT_ISSUERS`, `aud=SERVICE_JWT_AUDIENCE`).
 - **Ports and adapters** – domain code depends on the `AccountRepository` interface; `SupabaseAccountRepository` is the production adapter and `InMemoryAccountRepository` backs the tests, so the whole HTTP layer is tested without a database.
 - **Validation** – zod schemas via `fastify-type-provider-zod`; errors are returned as `{ error: { code, message } }`.
