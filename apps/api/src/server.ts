@@ -12,6 +12,7 @@ const app = await buildApp(
     accountRepository: new SupabaseAccountRepository(supabase),
     corsOrigin: env.CORS_ORIGIN,
     auth: {
+      supabaseUrl: env.SUPABASE_URL,
       userJwtSecret: env.SUPABASE_JWT_SECRET,
       serviceJwtSecret: env.SERVICE_JWT_SECRET,
       serviceIssuers: env.SERVICE_JWT_ISSUERS,

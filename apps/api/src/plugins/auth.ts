@@ -1,10 +1,14 @@
 import type { FastifyReply, FastifyRequest, onRequestAsyncHookHandler } from 'fastify';
 import fp from 'fastify-plugin';
-import { jwtVerify, type JWTPayload } from 'jose';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload, type JWTVerifyGetKey } from 'jose';
 
 export interface AuthOptions {
-  /** Secret used by Supabase Auth to sign end-user access tokens. */
-  userJwtSecret: string;
+  /** Supabase project URL; its JWKS endpoint verifies asymmetric (ES256/RS256) user tokens. */
+  supabaseUrl: string;
+  /** Legacy Supabase JWT secret for projects still issuing HS256 user tokens. */
+  userJwtSecret?: string | undefined;
+  /** Overrides JWKS fetching (used in tests). */
+  userJwks?: JWTVerifyGetKey | undefined;
   /** Shared secret used by trusted microservices calling internal endpoints. */
   serviceJwtSecret: string;
   serviceIssuers: string[];
@@ -31,10 +35,11 @@ declare module 'fastify' {
   }
 }
 
-const ALGORITHMS = ['HS256'];
+const SYMMETRIC_ALGORITHMS = ['HS256'];
+const USER_ALGORITHMS = ['HS256', 'ES256', 'RS256'];
 
 export const authPlugin = fp<AuthOptions>(async (app, opts) => {
-  const userKey = new TextEncoder().encode(opts.userJwtSecret);
+  const resolveUserKey = createUserKeyResolver(opts);
   const serviceKey = new TextEncoder().encode(opts.serviceJwtSecret);
 
   app.decorateRequest('user', null);
@@ -42,8 +47,8 @@ export const authPlugin = fp<AuthOptions>(async (app, opts) => {
 
   app.decorate('authenticateUser', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
-      const { payload } = await jwtVerify(extractBearer(request), userKey, {
-        algorithms: ALGORITHMS,
+      const { payload } = await jwtVerify(extractBearer(request), resolveUserKey, {
+        algorithms: USER_ALGORITHMS,
         audience: 'authenticated',
       });
       request.user = { id: requireSub(payload), email: stringClaim(payload, 'email') };
@@ -56,7 +61,7 @@ export const authPlugin = fp<AuthOptions>(async (app, opts) => {
   app.decorate('authenticateService', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { payload } = await jwtVerify(extractBearer(request), serviceKey, {
-        algorithms: ALGORITHMS,
+        algorithms: SYMMETRIC_ALGORITHMS,
         issuer: opts.serviceIssuers,
         audience: opts.serviceAudience,
       });
@@ -67,6 +72,25 @@ export const authPlugin = fp<AuthOptions>(async (app, opts) => {
     }
   });
 });
+
+/**
+ * Supabase projects sign user tokens either with the legacy shared secret (HS256)
+ * or with asymmetric signing keys published at /auth/v1/.well-known/jwks.json.
+ * The key is chosen per token from its `alg` header.
+ */
+function createUserKeyResolver(opts: AuthOptions): JWTVerifyGetKey {
+  const secret = opts.userJwtSecret ? new TextEncoder().encode(opts.userJwtSecret) : null;
+  const jwks =
+    opts.userJwks ?? createRemoteJWKSet(new URL('/auth/v1/.well-known/jwks.json', opts.supabaseUrl));
+
+  return (header, token) => {
+    if (header.alg === 'HS256') {
+      if (!secret) throw new Error('HS256 user tokens are not accepted: SUPABASE_JWT_SECRET is not set');
+      return secret;
+    }
+    return jwks(header, token);
+  };
+}
 
 function extractBearer(request: FastifyRequest): string {
   const header = request.headers.authorization;

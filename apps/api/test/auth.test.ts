@@ -1,5 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bearer, createTestApp, serviceToken, userToken } from './helpers/test-app.js';
+import {
+  bearer,
+  createTestApp,
+  rogueEs256Key,
+  serviceToken,
+  userToken,
+  userTokenEs256,
+} from './helpers/test-app.js';
 
 describe('authentication', () => {
   let ctx: Awaited<ReturnType<typeof createTestApp>>;
@@ -32,6 +39,26 @@ describe('authentication', () => {
         method: 'GET',
         url: '/accounts/me/statement',
         headers: bearer(token),
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it('accepts ES256 tokens signed by a key in the Supabase JWKS', async () => {
+      ctx.repository.seedAccount('es-user', 10);
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: '/accounts/me/statement',
+        headers: bearer(await userTokenEs256('es-user')),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().account.balanceCents).toBe(10);
+    });
+
+    it('rejects ES256 tokens signed by a key outside the JWKS', async () => {
+      const res = await ctx.app.inject({
+        method: 'GET',
+        url: '/accounts/me/statement',
+        headers: bearer(await userTokenEs256('es-user', await rogueEs256Key, 'other-kid')),
       });
       expect(res.statusCode).toBe(401);
     });

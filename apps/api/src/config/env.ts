@@ -11,7 +11,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.string().default('info'),
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  SUPABASE_JWT_SECRET: z.string().min(1),
+  SUPABASE_JWT_SECRET: z.string().min(1).optional(),
   SERVICE_JWT_SECRET: z.string().min(1),
   SERVICE_JWT_ISSUERS: csv,
   SERVICE_JWT_AUDIENCE: z.string().default('wallet-api'),
